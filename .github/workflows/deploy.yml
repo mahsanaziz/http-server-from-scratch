@@ -1,0 +1,31 @@
+name: Deploy
+on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/http-server:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/http-server:latest
+      - uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.VM_SSH_KEY }}
+          script: |
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/http-server:${{ github.sha }}
+            docker rm -f http-server
+            docker run -d --name http-server --network http-net --restart unless-stopped --memory 128m -p 8080:8080 ${{ secrets.DOCKERHUB_USERNAME }}/http-server:${{ github.sha }}
+            sleep 3
+            curl -sf localhost:8080/users || (docker logs http-server; exit 1)
